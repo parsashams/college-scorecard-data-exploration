@@ -1,0 +1,112 @@
+---
+title: "Exploring College Score Card With R"
+author: "Parsa Shams"
+date: "`r Sys.Date()`"
+output:
+  tufte::tufte_html: default
+  tufte::tufte_handout:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+bibliography: skeleton.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+library(tufte)
+knitr::opts_chunk$set(tidy = FALSE, cache.extra = packageVersion('tufte'), 
+                      echo=F, 
+                      cache=T, 
+                      warning = F,
+                      message=F)
+options(htmltools.dir.version = FALSE)
+library(rscorecard)
+library(dplyr)
+library(magrittr)
+library(ggmap)
+library(ggplot2)
+library(zipcode)
+library(ggthemes)
+source("config.R")
+```
+
+# Motivation
+
+`r newthought("This document is the confluence")` of two curiousities. First, I have been wanting to explore the College Score Card dataset, an open dataset curated by US Department of Education, which provides a wealth of information about American degree granting colleges and universities. Second reason is the desire to test the intruiging elegance of Edward Tufte's Handout Style of visual information design. Currently, I have no specific plans for this project. I will only be able to devote scattered increments of time to this exploration. The goal is to just explore a new dataset in a new medium and see if the medium is condusive to clearer data-driven story telling. 
+
+```{r get-data, include=FALSE}
+df <- sc_init() %>% 
+    sc_filter(PREDDEG==3) %>%
+    sc_select(unitid, instnm, PREDDEG, zip, 
+              ADM_RATE, PCTPELL, C150_4, C150_L4, CCBASIC,CONTROL) %>% 
+    sc_get()
+
+data(zipcode)
+
+df %<>%
+  mutate(zip = clean.zipcodes(zip)) %>%
+  inner_join(zipcode,by="zip")
+
+base_map <- get_map(location='united states', zoom=4 , maptype = "toner-lite",color='color')
+```
+
+# Graduation Rate
+
+
+```{r, fig.width = 10, fig.height=3.5,fig.fullwidth=TRUE, cache=TRUE,fig.cap="4-Year Graduation In US States"}
+plt_df <- df %>% group_by(state) %>% 
+  mutate(sort_x = -mean(c150_4,na.rm=T),
+         n = n()) %>%
+  filter(n>=10)
+
+ggplot(plt_df, aes(x=reorder(state,sort_x),y=c150_4*100)) +
+  stat_summary(fun.data="mean_cl_boot") +
+  # coord_flip() +
+  theme_tufte() +
+  geom_hline(yintercept=50) +
+  labs(x="State",y="Graduation Rate") 
+  # coord_flip()
+```
+
+The average graduation rate in the US is `r mean(df$c150_4,na.rm=T)`
+
+let's map graduation rates on a map of states
+
+# Selectiveness
+
+```{r make-admit-map, cache=TRUE, message=FALSE, warning=FALSE}
+ggmap(base_map, base_layer=ggplot(df, aes(x=longitude, y=latitude))) + 
+geom_point(
+      aes(colour=adm_rate),
+      alpha=.5)  +
+scale_color_distiller(palette="Spectral") +
+theme_void()
+```
+
+
+
+
+# Paying for College
+
+```{r, fig.height=5, fig.width=8, fig.fullwidth=TRUE}
+left <- 
+  ggplot(df,aes(x=is.na(adm_rate),y=c150_4)) +
+  geom_boxplot() +
+  scale_x_discrete("Admit Rates",labels=c("Missing","Reported")) +
+  labs(y="Graduation Rate") +
+  theme_tufte()
+
+
+right <- 
+  ggplot(df) +
+  geom_point(aes(adm_rate,c150_4,color=pctpell)) +
+  scale_color_distiller(palette="Spectral") +
+  labs(x="Admit Rate", y="4-year Graduation Rate",color="Pell Eligible")+
+  coord_fixed(ratio=1) +
+  theme_tufte()
+
+
+gridExtra::grid.arrange(left,right,ncol=2)
+```
